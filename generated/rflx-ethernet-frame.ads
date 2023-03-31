@@ -851,6 +851,11 @@ private
      (Cursor.State = S_Invalid
       or Cursor.State = S_Incomplete);
 
+   function Field_Size_Pre (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length) return Boolean;
+
+   function Field_Size_Cursors (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length
+      with Pre => Field_Size_Pre (Cursors, Fld, Frame_Size);
+
    pragma Warnings (Off, """Buffer"" is not modified, could be of access constant type");
 
    pragma Warnings (Off, "postcondition does not mention function result");
@@ -943,6 +948,10 @@ private
                              and then Invalid (Cursors (F_Type_Length_TPID))
                           then
                              Invalid (Cursors (F_Payload))))
+      and then
+        (for all F in Field =>
+          (if Well_Formed (Cursors (F)) and then Field_Size_Pre (Cursors, F, Frame_Size)
+           then Cursors (F).Last - Cursors (F).First + 1 = Field_Size_Cursors (Cursors, F, Frame_Size, First)))
       and then (if
                    Well_Formed (Cursors (F_Destination))
                 then
@@ -952,74 +961,63 @@ private
                    and then (if
                                 Well_Formed (Cursors (F_Source))
                              then
-                                Cursors (F_Source).Last - Cursors (F_Source).First + 1 = 48
-                                and then Cursors (F_Source).Predecessor = F_Destination
+                                Cursors (F_Source).Predecessor = F_Destination
                                 and then Cursors (F_Source).First = Cursors (F_Destination).Last + 1
                                 and then (if
                                              Well_Formed (Cursors (F_Type_Length_TPID))
                                           then
-                                             Cursors (F_Type_Length_TPID).Last - Cursors (F_Type_Length_TPID).First + 1 = 16
-                                             and then Cursors (F_Type_Length_TPID).Predecessor = F_Source
+                                             Cursors (F_Type_Length_TPID).Predecessor = F_Source
                                              and then Cursors (F_Type_Length_TPID).First = Cursors (F_Source).Last + 1
                                              and then (if
                                                           Well_Formed (Cursors (F_Ether_Type))
                                                           and then (Cursors (F_Type_Length_TPID).Value >= 1536
                                                                     and Cursors (F_Type_Length_TPID).Value /= 16#8100#)
                                                        then
-                                                          Cursors (F_Ether_Type).Last - Cursors (F_Ether_Type).First + 1 = 16
-                                                          and then Cursors (F_Ether_Type).Predecessor = F_Type_Length_TPID
+                                                          Cursors (F_Ether_Type).Predecessor = F_Type_Length_TPID
                                                           and then Cursors (F_Ether_Type).First = RFLX_Types.Bit_Index (Cursors (F_Type_Length_TPID).First)
                                                           and then (if
                                                                        Well_Formed (Cursors (F_Payload))
                                                                     then
-                                                                       Cursors (F_Payload).Last - Cursors (F_Payload).First + 1 = RFLX_Types.Bit_Length (Frame_Size) * 8 + ((-RFLX_Types.Bit_Length (Cursors (F_Ether_Type).Last)) + RFLX_Types.Bit_Length (First) - 1)
-                                                                       and then Cursors (F_Payload).Predecessor = F_Ether_Type
+                                                                       Cursors (F_Payload).Predecessor = F_Ether_Type
                                                                        and then Cursors (F_Payload).First = Cursors (F_Ether_Type).Last + 1))
                                              and then (if
                                                           Well_Formed (Cursors (F_Payload))
                                                           and then Cursors (F_Type_Length_TPID).Value <= 1500
                                                        then
-                                                          Cursors (F_Payload).Last - Cursors (F_Payload).First + 1 = RFLX_Types.Bit_Length (Cursors (F_Type_Length_TPID).Value) * 8
-                                                          and then Cursors (F_Payload).Predecessor = F_Type_Length_TPID
+                                                          Cursors (F_Payload).Predecessor = F_Type_Length_TPID
                                                           and then Cursors (F_Payload).First = Cursors (F_Type_Length_TPID).Last + 1)
                                              and then (if
                                                           Well_Formed (Cursors (F_TPID))
                                                           and then Cursors (F_Type_Length_TPID).Value = 16#8100#
                                                        then
-                                                          Cursors (F_TPID).Last - Cursors (F_TPID).First + 1 = 16
-                                                          and then Cursors (F_TPID).Predecessor = F_Type_Length_TPID
+                                                          Cursors (F_TPID).Predecessor = F_Type_Length_TPID
                                                           and then Cursors (F_TPID).First = RFLX_Types.Bit_Index (Cursors (F_Type_Length_TPID).First)
                                                           and then (if
                                                                        Well_Formed (Cursors (F_TCI))
                                                                     then
-                                                                       Cursors (F_TCI).Last - Cursors (F_TCI).First + 1 = 16
-                                                                       and then Cursors (F_TCI).Predecessor = F_TPID
+                                                                       Cursors (F_TCI).Predecessor = F_TPID
                                                                        and then Cursors (F_TCI).First = Cursors (F_TPID).Last + 1
                                                                        and then (if
                                                                                     Well_Formed (Cursors (F_Type_Length))
                                                                                  then
-                                                                                    Cursors (F_Type_Length).Last - Cursors (F_Type_Length).First + 1 = 16
-                                                                                    and then Cursors (F_Type_Length).Predecessor = F_TCI
+                                                                                    Cursors (F_Type_Length).Predecessor = F_TCI
                                                                                     and then Cursors (F_Type_Length).First = Cursors (F_TCI).Last + 1
                                                                                     and then (if
                                                                                                  Well_Formed (Cursors (F_Ether_Type))
                                                                                                  and then Cursors (F_Type_Length).Value >= 1536
                                                                                               then
-                                                                                                 Cursors (F_Ether_Type).Last - Cursors (F_Ether_Type).First + 1 = 16
-                                                                                                 and then Cursors (F_Ether_Type).Predecessor = F_Type_Length
+                                                                                                 Cursors (F_Ether_Type).Predecessor = F_Type_Length
                                                                                                  and then Cursors (F_Ether_Type).First = RFLX_Types.Bit_Index (Cursors (F_Type_Length).First)
                                                                                                  and then (if
                                                                                                               Well_Formed (Cursors (F_Payload))
                                                                                                            then
-                                                                                                              Cursors (F_Payload).Last - Cursors (F_Payload).First + 1 = RFLX_Types.Bit_Length (Frame_Size) * 8 + ((-RFLX_Types.Bit_Length (Cursors (F_Ether_Type).Last)) + RFLX_Types.Bit_Length (First) - 1)
-                                                                                                              and then Cursors (F_Payload).Predecessor = F_Ether_Type
+                                                                                                              Cursors (F_Payload).Predecessor = F_Ether_Type
                                                                                                               and then Cursors (F_Payload).First = Cursors (F_Ether_Type).Last + 1))
                                                                                     and then (if
                                                                                                  Well_Formed (Cursors (F_Payload))
                                                                                                  and then Cursors (F_Type_Length).Value <= 1500
                                                                                               then
-                                                                                                 Cursors (F_Payload).Last - Cursors (F_Payload).First + 1 = RFLX_Types.Bit_Length (Cursors (F_Type_Length).Value) * 8
-                                                                                                 and then Cursors (F_Payload).Predecessor = F_Type_Length
+                                                                                                 Cursors (F_Payload).Predecessor = F_Type_Length
                                                                                                  and then Cursors (F_Payload).First = Cursors (F_Type_Length).Last + 1))))))))
     with
      Post =>
@@ -1126,29 +1124,42 @@ private
              RFLX_Types.Base_Integer (Size) / 8 >= 46
              and RFLX_Types.Base_Integer (Size) / 8 <= 1500));
 
-   function Field_Size (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
+   function Valid_Cursors (Cursors : Field_Cursors; Fld : Field) return Boolean
+   is (Cursors (Fld).State = S_Valid
+      and then Cursors (Fld).First < Cursors (Fld).Last + 1);
+
+   function Field_Size_Pre (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length) return Boolean
+   is ((case Fld is when F_Payload =>
+      (if Cursors (Fld).Predecessor = F_Ether_Type then True
+      elsif Cursors (Fld).Predecessor = F_Type_Length then Valid_Cursors (Cursors, F_Type_Length)
+      elsif Cursors (Fld).Predecessor = F_Type_Length_TPID then Valid_Cursors (Cursors, F_Type_Length_TPID)
+      else True),
+            when others => True));
+
+   function Field_Size_Cursors (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length is
      ((case Fld is
-          when F_Destination | F_Source =>
-             48,
-          when F_Type_Length_TPID | F_TPID | F_TCI | F_Type_Length | F_Ether_Type =>
-             16,
+          when F_Destination | F_Source => 48,
+          when F_Type_Length_TPID | F_TPID | F_TCI | F_Type_Length | F_Ether_Type => 16,
           when F_Payload =>
              (if
-                 Ctx.Cursors (Fld).Predecessor = F_Ether_Type
+                 Cursors (Fld).Predecessor = F_Ether_Type
               then
-                 RFLX_Types.Bit_Length (Ctx.Frame_Size) * 8 + ((-RFLX_Types.Bit_Length (Ctx.Cursors (F_Ether_Type).Last)) + RFLX_Types.Bit_Length (Ctx.First) - 1)
+                 RFLX_Types.Bit_Length (Frame_Size) * 8 + ((-RFLX_Types.Bit_Length (Cursors (F_Ether_Type).Last)) + RFLX_Types.Bit_Length (First) - 1)
               elsif
-                 Ctx.Cursors (Fld).Predecessor = F_Type_Length
-                 and then Ctx.Cursors (F_Type_Length).Value <= 1500
+                 Cursors (Fld).Predecessor = F_Type_Length
+                 and then Cursors (F_Type_Length).Value <= 1500
               then
-                 RFLX_Types.Bit_Length (Ctx.Cursors (F_Type_Length).Value) * 8
+                 RFLX_Types.Bit_Length (Cursors (F_Type_Length).Value) * 8
               elsif
-                 Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID
-                 and then Ctx.Cursors (F_Type_Length_TPID).Value <= 1500
+                 Cursors (Fld).Predecessor = F_Type_Length_TPID
+                 and then Cursors (F_Type_Length_TPID).Value <= 1500
               then
-                 RFLX_Types.Bit_Length (Ctx.Cursors (F_Type_Length_TPID).Value) * 8
+                 RFLX_Types.Bit_Length (Cursors (F_Type_Length_TPID).Value) * 8
               else
                  RFLX_Types.Unreachable)));
+
+   function Field_Size (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
+     (Field_Size_Cursors (Ctx.Cursors, Fld, Ctx.Frame_Size, Ctx.First));
 
    function Field_First (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Index is
      ((if
@@ -1243,8 +1254,7 @@ private
       or Ctx.Cursors (Fld).State = S_Well_Formed);
 
    function Valid (Ctx : Context; Fld : Field) return Boolean is
-     (Ctx.Cursors (Fld).State = S_Valid
-      and then Ctx.Cursors (Fld).First < Ctx.Cursors (Fld).Last + 1);
+     (Valid_Cursors (Ctx.Cursors, Fld));
 
    function Incomplete (Ctx : Context; Fld : Field) return Boolean is
      (Ctx.Cursors (Fld).State = S_Incomplete);
