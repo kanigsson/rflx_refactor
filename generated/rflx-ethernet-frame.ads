@@ -852,12 +852,13 @@ private
       or Cursor.State = S_Incomplete);
 
    function Field_Size_Pre (Cursors : Field_Cursors; Fld : Field) return Boolean;
+   function Field_First_Pre (Cursors : Field_Cursors; Fld : Field) return Boolean;
 
    function Field_Size_Cursors (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length
       with Pre => Field_Size_Pre (Cursors, Fld);
 
    function Field_First_Cursors (Cursors : Field_Cursors; Fld : Field; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Index
-      with Pre => Field_Size_Pre (Cursors, Fld);
+      with Pre => Field_First_Pre (Cursors, Fld);
    pragma Warnings (Off, """Buffer"" is not modified, could be of access constant type");
 
    pragma Warnings (Off, "postcondition does not mention function result");
@@ -1009,10 +1010,7 @@ private
                                                                                                  Well_Formed (Cursors (F_Payload))
                                                                                                  and then Cursors (F_Type_Length).Value <= 1500
                                                                                               then
-                                                                                                 Cursors (F_Payload).Predecessor = F_Type_Length)))))
-    with
-     Post =>
-       True;
+                                                                                                 Cursors (F_Payload).Predecessor = F_Type_Length)))));
 
    pragma Warnings (On, """Buffer"" is not modified, could be of access constant type");
 
@@ -1151,6 +1149,14 @@ private
 
    function Field_Size (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
      (Field_Size_Cursors (Ctx.Cursors, Fld, Ctx.Frame_Size, Ctx.First));
+
+   function Field_First_Pre (Cursors : Field_Cursors; Fld : Field) return Boolean
+   is ((case Fld is when F_Ether_Type =>
+      (if Cursors (Fld).Predecessor = F_Type_Length then Valid_Cursors (Cursors, F_Type_Length)
+       elsif Cursors (Fld).Predecessor = F_Type_Length_TPID then Valid_Cursors (Cursors, F_Type_Length_TPID)),
+            when F_TPID =>
+               (if Cursors (Fld).Predecessor = F_Type_Length_TPID then Valid_Cursors (Cursors, F_Type_Length_TPID)),
+            when others => True));
 
    function Field_First_Cursors (Cursors : Field_Cursors; Fld : Field; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Index is
       ((if
