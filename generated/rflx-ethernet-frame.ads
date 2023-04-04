@@ -279,6 +279,8 @@ is
      Post =>
        True;
 
+   function Path_Condition_Internal (Cursors : Field_Cursors; Fld : Field) return Boolean;
+
    pragma Warnings (On, "postcondition does not mention function result");
 
    pragma Warnings (Off, "postcondition does not mention function result");
@@ -342,6 +344,7 @@ is
 
    pragma Warnings (On, "postcondition does not mention function result");
 
+   function Valid_Next_Internal (Cursors : Field_Cursors; Fld : Field) return Boolean;
    function Valid_Next (Ctx : Context; Fld : Field) return Boolean;
 
    function Available_Space (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length with
@@ -851,10 +854,8 @@ private
      (Cursor.State = S_Invalid
       or Cursor.State = S_Incomplete);
 
-   function Field_Size_Pre (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length) return Boolean;
-
-   function Field_Size_Cursors (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length
-      with Pre => Field_Size_Pre (Cursors, Fld, Frame_Size);
+   function Field_Size_Internal (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length
+      with Pre => Valid_Next_Internal (Cursors, Fld);
 
    pragma Warnings (Off, """Buffer"" is not modified, could be of access constant type");
 
@@ -950,13 +951,12 @@ private
                              Invalid (Cursors (F_Payload))))
       and then
         (for all F in Field =>
-          (if Well_Formed (Cursors (F)) and then Field_Size_Pre (Cursors, F, Frame_Size)
-           then Cursors (F).Last - Cursors (F).First + 1 = Field_Size_Cursors (Cursors, F, Frame_Size, First)))
+          (if Well_Formed (Cursors (F)) and then Valid_Next_Internal (Cursors, F)
+           then Cursors (F).Last - Cursors (F).First + 1 = Field_Size_Internal (Cursors, F, Frame_Size, First)))
       and then (if
                    Well_Formed (Cursors (F_Destination))
                 then
-                   Cursors (F_Destination).Last - Cursors (F_Destination).First + 1 = 48
-                   and then Cursors (F_Destination).Predecessor = F_Initial
+                   Cursors (F_Destination).Predecessor = F_Initial
                    and then Cursors (F_Destination).First = First
                    and then (if
                                 Well_Formed (Cursors (F_Source))
@@ -1018,10 +1018,7 @@ private
                                                                                                  and then Cursors (F_Type_Length).Value <= 1500
                                                                                               then
                                                                                                  Cursors (F_Payload).Predecessor = F_Type_Length
-                                                                                                 and then Cursors (F_Payload).First = Cursors (F_Type_Length).Last + 1))))))))
-    with
-     Post =>
-       True;
+                                                                                                 and then Cursors (F_Payload).First = Cursors (F_Type_Length).Last + 1))))))));
 
    pragma Warnings (On, """Buffer"" is not modified, could be of access constant type");
 
@@ -1080,29 +1077,32 @@ private
           when F_Payload =>
              True));
 
-   function Path_Condition (Ctx : Context; Fld : Field) return Boolean is
-     ((case Ctx.Cursors (Fld).Predecessor is
+   function Path_Condition_Internal (Cursors : Field_Cursors; Fld : Field) return Boolean is
+     ((case Cursors (Fld).Predecessor is
           when F_Initial | F_Destination | F_Source | F_TPID | F_TCI | F_Ether_Type | F_Payload | F_Final =>
              True,
           when F_Type_Length_TPID =>
              (case Fld is
                  when F_Ether_Type =>
-                    Ctx.Cursors (F_Type_Length_TPID).Value >= 1536
-                    and Ctx.Cursors (F_Type_Length_TPID).Value /= 16#8100#,
+                    Cursors (F_Type_Length_TPID).Value >= 1536
+                    and Cursors (F_Type_Length_TPID).Value /= 16#8100#,
                  when F_Payload =>
-                    Ctx.Cursors (F_Type_Length_TPID).Value <= 1500,
+                    Cursors (F_Type_Length_TPID).Value <= 1500,
                  when F_TPID =>
-                    Ctx.Cursors (F_Type_Length_TPID).Value = 16#8100#,
+                    Cursors (F_Type_Length_TPID).Value = 16#8100#,
                  when others =>
                     False),
           when F_Type_Length =>
              (case Fld is
                  when F_Ether_Type =>
-                    Ctx.Cursors (F_Type_Length).Value >= 1536,
+                    Cursors (F_Type_Length).Value >= 1536,
                  when F_Payload =>
-                    Ctx.Cursors (F_Type_Length).Value <= 1500,
+                    Cursors (F_Type_Length).Value <= 1500,
                  when others =>
                     False)));
+
+   function Path_Condition (Ctx : Context; Fld : Field) return Boolean is
+      (Path_Condition_Internal (Ctx.Cursors, Fld));
 
    function Field_Condition (Ctx : Context; Fld : Field; Val : RFLX_Types.Base_Integer; Size : RFLX_Types.Bit_Length := 0) return Boolean is
      ((case Fld is
@@ -1124,22 +1124,16 @@ private
              RFLX_Types.Base_Integer (Size) / 8 >= 46
              and RFLX_Types.Base_Integer (Size) / 8 <= 1500));
 
-   function Valid_Cursors (Cursors : Field_Cursors; Fld : Field) return Boolean
+   function Valid_Internal (Cursors : Field_Cursors; Fld : Field) return Boolean
    is (Cursors (Fld).State = S_Valid
       and then Cursors (Fld).First < Cursors (Fld).Last + 1);
 
-   function Field_Size_Pre (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length) return Boolean
-   is ((case Fld is when F_Payload =>
-      (if Cursors (Fld).Predecessor = F_Ether_Type then True
-      elsif Cursors (Fld).Predecessor = F_Type_Length then Valid_Cursors (Cursors, F_Type_Length)
-      elsif Cursors (Fld).Predecessor = F_Type_Length_TPID then Valid_Cursors (Cursors, F_Type_Length_TPID)
-      else True),
-            when others => True));
-
-   function Field_Size_Cursors (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length is
+   function Field_Size_Internal (Cursors : Field_Cursors; Fld : Field; Frame_Size : Ethernet.Type_Length; First : RFLX_Types.Bit_Index) return RFLX_Types.Bit_Length is
      ((case Fld is
-          when F_Destination | F_Source => 48,
-          when F_Type_Length_TPID | F_TPID | F_TCI | F_Type_Length | F_Ether_Type => 16,
+          when F_Destination | F_Source =>
+            48,
+          when F_Type_Length_TPID | F_TPID | F_TCI | F_Type_Length | F_Ether_Type =>
+            16,
           when F_Payload =>
              (if
                  Cursors (Fld).Predecessor = F_Ether_Type
@@ -1159,37 +1153,13 @@ private
                  RFLX_Types.Unreachable)));
 
    function Field_Size (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
-     (Field_Size_Cursors (Ctx.Cursors, Fld, Ctx.Frame_Size, Ctx.First));
+     (Field_Last (Ctx, Fld) - Field_First (Ctx, Fld) + 1);
 
    function Field_First (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Index is
-     ((if
-          Fld = F_Destination
-       then
-          Ctx.First
-       elsif
-          Fld = F_Ether_Type
-          and then Ctx.Cursors (Fld).Predecessor = F_Type_Length
-          and then Ctx.Cursors (F_Type_Length).Value >= 1536
-       then
-          Ctx.Cursors (F_Type_Length).First
-       elsif
-          Fld = F_Ether_Type
-          and then Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID
-          and then (Ctx.Cursors (F_Type_Length_TPID).Value >= 1536
-                    and Ctx.Cursors (F_Type_Length_TPID).Value /= 16#8100#)
-       then
-          Ctx.Cursors (F_Type_Length_TPID).First
-       elsif
-          Fld = F_TPID
-          and then Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID
-          and then Ctx.Cursors (F_Type_Length_TPID).Value = 16#8100#
-       then
-          Ctx.Cursors (F_Type_Length_TPID).First
-       else
-          Ctx.Cursors (Ctx.Cursors (Fld).Predecessor).Last + 1));
+     (Ctx.Cursors (Fld).First);
 
    function Field_Last (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
-     (Field_First (Ctx, Fld) + Field_Size (Ctx, Fld) - 1);
+     (Ctx.Cursors (Fld).Last);
 
    function Predecessor (Ctx : Context; Fld : Virtual_Field) return Virtual_Field is
      ((case Fld is
@@ -1198,46 +1168,50 @@ private
           when others =>
              Ctx.Cursors (Fld).Predecessor));
 
-   function Valid_Predecessor (Ctx : Context; Fld : Virtual_Field) return Boolean is
+   function Valid_Predecessor_Internal (Cursors : Field_Cursors; Fld : Virtual_Field) return Boolean is
      ((case Fld is
           when F_Initial =>
              True,
           when F_Destination =>
-             Ctx.Cursors (Fld).Predecessor = F_Initial,
+             Cursors (Fld).Predecessor = F_Initial,
           when F_Source =>
-             (Valid (Ctx.Cursors (F_Destination))
-              and Ctx.Cursors (Fld).Predecessor = F_Destination),
+             (Valid (Cursors (F_Destination))
+              and Cursors (Fld).Predecessor = F_Destination),
           when F_Type_Length_TPID =>
-             (Valid (Ctx.Cursors (F_Source))
-              and Ctx.Cursors (Fld).Predecessor = F_Source),
+             (Valid (Cursors (F_Source))
+              and Cursors (Fld).Predecessor = F_Source),
           when F_TPID =>
-             (Valid (Ctx.Cursors (F_Type_Length_TPID))
-              and Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID),
+             (Valid (Cursors (F_Type_Length_TPID))
+              and Cursors (Fld).Predecessor = F_Type_Length_TPID),
           when F_TCI =>
-             (Valid (Ctx.Cursors (F_TPID))
-              and Ctx.Cursors (Fld).Predecessor = F_TPID),
+             (Valid (Cursors (F_TPID))
+              and Cursors (Fld).Predecessor = F_TPID),
           when F_Type_Length =>
-             (Valid (Ctx.Cursors (F_TCI))
-              and Ctx.Cursors (Fld).Predecessor = F_TCI),
+             (Valid (Cursors (F_TCI))
+              and Cursors (Fld).Predecessor = F_TCI),
           when F_Ether_Type =>
-             (Valid (Ctx.Cursors (F_Type_Length))
-              and Ctx.Cursors (Fld).Predecessor = F_Type_Length)
-             or (Valid (Ctx.Cursors (F_Type_Length_TPID))
-                 and Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID),
+             (Valid (Cursors (F_Type_Length))
+              and Cursors (Fld).Predecessor = F_Type_Length)
+             or (Valid (Cursors (F_Type_Length_TPID))
+                 and Cursors (Fld).Predecessor = F_Type_Length_TPID),
           when F_Payload =>
-             (Valid (Ctx.Cursors (F_Ether_Type))
-              and Ctx.Cursors (Fld).Predecessor = F_Ether_Type)
-             or (Valid (Ctx.Cursors (F_Type_Length))
-                 and Ctx.Cursors (Fld).Predecessor = F_Type_Length)
-             or (Valid (Ctx.Cursors (F_Type_Length_TPID))
-                 and Ctx.Cursors (Fld).Predecessor = F_Type_Length_TPID),
+             (Valid (Cursors (F_Ether_Type))
+              and Cursors (Fld).Predecessor = F_Ether_Type)
+             or (Valid (Cursors (F_Type_Length))
+                 and Cursors (Fld).Predecessor = F_Type_Length)
+             or (Valid (Cursors (F_Type_Length_TPID))
+                 and Cursors (Fld).Predecessor = F_Type_Length_TPID),
           when F_Final =>
-             (Well_Formed (Ctx.Cursors (F_Payload))
-              and Ctx.Cursors (Fld).Predecessor = F_Payload)));
+             (Well_Formed (Cursors (F_Payload))
+              and Cursors (Fld).Predecessor = F_Payload)));
 
-   function Valid_Next (Ctx : Context; Fld : Field) return Boolean is
-     (Valid_Predecessor (Ctx, Fld)
-      and then Path_Condition (Ctx, Fld));
+   function Valid_Predecessor (Ctx : Context; Fld : Virtual_Field) return Boolean is
+      (Valid_Predecessor_Internal (Ctx.Cursors, Fld));
+
+   function Valid_Next_Internal (Cursors : Field_Cursors; Fld : Field) return Boolean is
+      (Valid_Predecessor_Internal (Cursors, Fld) and then Path_Condition_Internal (Cursors, Fld));
+
+   function Valid_Next (Ctx : Context; Fld : Field) return Boolean is (Valid_Next_Internal (Ctx.Cursors, Fld));
 
    function Available_Space (Ctx : Context; Fld : Field) return RFLX_Types.Bit_Length is
      (Ctx.Last - Field_First (Ctx, Fld) + 1);
@@ -1254,7 +1228,7 @@ private
       or Ctx.Cursors (Fld).State = S_Well_Formed);
 
    function Valid (Ctx : Context; Fld : Field) return Boolean is
-     (Valid_Cursors (Ctx.Cursors, Fld));
+     (Valid_Internal (Ctx.Cursors, Fld));
 
    function Incomplete (Ctx : Context; Fld : Field) return Boolean is
      (Ctx.Cursors (Fld).State = S_Incomplete);
